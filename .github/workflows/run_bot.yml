@@ -1,0 +1,36 @@
+name: Hourly Kingshot Code Checker
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Runs automatically at the start of every hour
+  workflow_dispatch:     # Allows you to click a button to test it manually whenever you want
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository Code
+      uses: actions/checkout@v4
+
+    - name: Set Up Python Environment
+      uses: actions/setup-python@v5
+      with:
+        python-python: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        pip install requests
+
+    - name: Execute Code Scraper Script
+      env:
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: python bot.py
+
+    - name: Commit Updated Code History File
+      run: |
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "actions@github.com"
+        git add codes_history.txt || true
+        git commit -m "Automated update to history tracker" || true
+        git push || true
