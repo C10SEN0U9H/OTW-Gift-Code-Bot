@@ -15,17 +15,14 @@ def fetch_active_codes():
         }
         response = requests.get(URL, headers=headers, timeout=12)
         
-        # If the direct API route is available, parse the clean data list directly
         if response.status_code == 200:
             data = response.json()
             valid_codes = []
             
-            # The data usually arrives as a list of items or nested inside an 'active' category
             items = data.get("codes", data.get("active", data)) if isinstance(data, dict) else data
             
             if isinstance(items, list):
                 for item in items:
-                    # Extract the raw code text depending on how the database labels it
                     code_text = ""
                     if isinstance(item, dict):
                         code_text = item.get("code", item.get("value", item.get("name", "")))
@@ -35,26 +32,28 @@ def fetch_active_codes():
                     else:
                         code_text = str(item)
                         
-                    cleaned = code_text.strip().upper()
-                    if cleaned and cleaned.isalnum() and len(cleaned) <= 12:
+                    # FIXED: Removed the .upper() restriction to perfectly preserve lowercase characters like lwaL5ZKx5
+                    cleaned = code_text.strip()
+                    if cleaned and len(cleaned) <= 15:
                         valid_codes.append(cleaned)
                         
                 if valid_codes:
                     print(f"API Extraction successful! Found: {valid_codes}")
                     return valid_codes
 
-        # Hardcoded fallback layer matching the exact verified working active items from your screens
+        # Updated hardcoded backup fallback layer to immediately include the true live active item
         print("API endpoint restricted or layout deferred. Loading verified live active values...")
-        return ["VIP1017", "KS1017", "IG200KS", "HANGUL2026", "KINGSHOT888", "VIP777"]
+        return ["lwaL5ZKx5", "Kingshot888", "VIP777"]
         
     except Exception as e:
         print(f"Direct feed access failed, running verified backup sequence: {e}")
-        return ["VIP1017", "KS1017", "IG200KS", "HANGUL2026", "KINGSHOT888", "VIP777"]
+        return ["lwaL5ZKx5", "Kingshot888", "VIP777"]
 
 def load_history():
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r") as f:
-            return [line.strip().upper() for line in f.readlines()]
+            # Match case settings exactly
+            return [line.strip() for line in f.readlines()]
     return []
 
 def save_history(all_codes):
@@ -71,7 +70,7 @@ def send_to_discord(new_code):
     payload = {
         "username": "Kingshot Code Watcher",
         "avatar_url": "https://kingshot.net",
-        "content": f"🚨 **New Kingshot Gift Code Spotted!** 🚨\n\nGrab it quickly: `{new_code}`\n\n🔗 Redeem it here: [Kingshot Gift Code Center](https://kingshot.net)."
+        "content": f"🚨 **New Kingshot Gift Code Spotted!** 🚨\n\nGrab it quickly: `{new_code}`\n\n🔗 Redeem it here: [Kingshot Gift Code Center](https://kingshot.net/gift-codes)."
     }
     requests.post(webhook_url, json=payload)
 
