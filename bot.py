@@ -15,10 +15,9 @@ def fetch_active_codes():
         }
         response = requests.get(URL, headers=headers, timeout=12)
         
+        valid_codes = []
         if response.status_code == 200:
             data = response.json()
-            valid_codes = []
-            
             items = data.get("codes", data.get("active", data)) if isinstance(data, dict) else data
             
             if isinstance(items, list):
@@ -32,27 +31,35 @@ def fetch_active_codes():
                     else:
                         code_text = str(item)
                         
-                    # FIXED: Removed the .upper() restriction to perfectly preserve lowercase characters like lwaL5ZKx5
                     cleaned = code_text.strip()
-                    if cleaned and len(cleaned) <= 15:
+                    if cleaned and len(cleaned) <= 20:  # Expanded character limit length for longer store codes
                         valid_codes.append(cleaned)
                         
                 if valid_codes:
                     print(f"API Extraction successful! Found: {valid_codes}")
                     return valid_codes
 
-        # Updated hardcoded backup fallback layer to immediately include the true live active item
-        print("API endpoint restricted or layout deferred. Loading verified live active values...")
-        return ["lwaL5ZKx5", "Kingshot888", "VIP777"]
+        # DYNAMIC BACKUP: Scrapes the text of the webpage directly if the custom API block resets
+        print("API structured extraction empty. Scraping direct text strings...")
+        html_response = requests.get("https://kingshot.net/gift-codes", headers=headers, timeout=12)
+        import re
+        # Pulls any alphanumeric word between 6 and 20 characters that looks like a store promo code
+        found_words = re.findall(r'\b(OFFICIALSTORE\d+|KINGSHOT\d+|VIP\d+|[A-Z0-9]{6,20})\b', html_response.text, re.IGNORECASE)
+        for word in found_words:
+            cleaned_word = word.strip()
+            if cleaned_word.upper() not in ["ACTIVE", "EXPIRED", "VERSION", "TOTAL"]:
+                if cleaned_word not in valid_codes:
+                    valid_codes.append(cleaned_word)
+                    
+        return valid_codes
         
     except Exception as e:
-        print(f"Direct feed access failed, running verified backup sequence: {e}")
-        return ["lwaL5ZKx5", "Kingshot888", "VIP777"]
+        print(f"Direct feed access tracking failed: {e}")
+        return []
 
 def load_history():
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r") as f:
-            # Match case settings exactly
             return [line.strip() for line in f.readlines()]
     return []
 
@@ -84,14 +91,14 @@ def main():
     new_discoveries = [code for code in active_codes if code not in history]
 
     if new_discoveries:
-        print(f"Posting missing items: {new_discoveries}")
+        print(f"Posting newly discovered items: {new_discoveries}")
         for code in new_discoveries:
             send_to_discord(code)
             history.append(code)
         save_history(history)
         print("Discord update sequence completed successfully.")
     else:
-        print("All codes found are already tracked in memory history.")
+        print("All codes discovered are already logged inside historical tracking memory.")
 
 if __name__ == "__main__":
     main()
