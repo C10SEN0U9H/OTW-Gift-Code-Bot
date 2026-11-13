@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 URL = "https://kingshot.net/gift-codes"
 HISTORY_FILE = "codes_history.txt"
 CODE_PATTERN = re.compile(r"^[A-Za-z0-9]{4,40}$")
-# Only inspect code-styled elements within the active section.\n\n
+# Only inspect code-styled elements within the active section.
 def _extract_codes_from_active_section(soup):
     heading = soup.find(
         lambda tag: tag.name in ("h2", "h3")
