@@ -92,7 +92,12 @@ def send_to_discord(new_code):
 
 
 def main():
+    dry_run = os.environ.get("DRY_RUN", "").lower() == "true"
     active_codes = fetch_active_codes()
+    if dry_run:
+        print(f"DRY RUN: detected codes: {active_codes}")
+        print("DRY RUN: no Discord posts and no history changes")
+        return
     if not active_codes:
         print("No safe codes retrieved; leaving history unchanged")
         return
