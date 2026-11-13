@@ -1,105 +1,116 @@
 import os
-import json
+import re
 import requests
 from bs4 import BeautifulSoup
 
-# FIXED: Hardcoded precisely to the gift codes layout page
 URL = "https://kingshot.net/gift-codes"
 HISTORY_FILE = "codes_history.txt"
+CODE_PATTERN = re.compile(r"^[A-Za-z0-9]{4,40}$")
+# HTML structure can change; match active entries by their individual redeem links,
+# never by flattening or splitting an entire paragraph/summary into "codes".
+REDEEM_CODE_PATTERN = re.compile(r"(?:^|[?&])(?:code|giftcode|gift_code)=([^&#]+)", re.I)
+
+
+def _extract_codes_from_active_section(soup):
+    heading = soup.find(
+        lambda tag: tag.name in ("h2", "h3")
+        and "active gift codes" in tag.get_text(" ", strip=True).lower()
+    )
+    if heading is None:
+        raise ValueError("Active Gift Codes heading missing; layout may have changed")
+
+    codes = []
+    # Work only between the active heading and the start of expired/redeem help.
+    for element in heading.next_elements:
+        if getattr(element, "name", None) in ("h2", "h3"):
+            label = element.get_text(" ", strip=True).lower()
+            if "expired" in label or "how to redeem" in label:
+                break
+        if getattr(element, "name", None) != "code":
+            continue
+        value = element.get_text(" ", strip=True)
+        if CODE_PATTERN.fullmatch(value) and value not in codes:
+            codes.append(value)
+    return codes
+
 
 def fetch_active_codes():
-    print(f"Connecting directly to target page: {URL}")
+    print(f"Checking active gift codes at {URL}")
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (compatible; OTW-Kingshot-Code-Watcher/1.0)"
         }
-        response = requests.get(URL, headers=headers, timeout=12)
+        response = requests.get(URL, headers=headers, timeout=15)
         response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        valid_codes = []
-        
-        # 1. Locate the precise "Active Gift Codes" section header
-        active_heading = soup.find(lambda tag: tag.name in ['h2', 'h3'] and "Active Gift Codes" in tag.text)
-        
-        if active_heading:
-            print("Found Active section header. Scanning items inside block...")
-            # 2. Sweep downwards through elements until reaching the Expired codes heading block
-            current_element = active_heading.find_next()
-            while current_element:
-                # Instantly break the scan loop if we step past into the expired container
-                if current_element.name in ['h2', 'h3'] and "Expired" in current_element.text:
-                    break
-                
-                # Filter strictly for paragraph elements holding your font-mono text layout
-                if current_element.name == "p" and "font-mono" in "".join(current_element.get("class", [])):
-                    code_text = current_element.get_text().strip()
-                    if code_text and code_text not in valid_codes:
-                        valid_codes.append(code_text)
-                
-                current_element = current_element.find_next()
-                
-        # 3. Text Sentence Extraction Backup if visual container blocks are delayed during loading
-        if not valid_codes:
-            print("Layout elements empty, parsing direct text summary sentence instead...")
-            page_text = soup.get_text()
-            import re
-            match = re.search(r'active gift codes:\s*([A-Za-z0-9,\s]+)\.', page_text, re.IGNORECASE)
-            if match:
-                raw_list = match.group(1).split(',')
-                for item in raw_list:
-                    cleaned = item.replace("and", "").strip()
-                    if cleaned and cleaned.upper() not in ["ACTIVE", "EXPIRED"]:
-                        valid_codes.append(cleaned)
-
-        print(f"Verified Active Gift Codes: {valid_codes}")
-        return valid_codes
-        
-    except Exception as e:
-        print(f"Webpage connection parsing error: {e}")
+        soup = BeautifulSoup(response.text, "html.parser")
+        codes = _extract_codes_from_active_section(soup)
+        if not codes:
+            print("No individual code elements found; skipping to avoid false alerts")
+        else:
+            print(f"Individual active gift codes found: {codes}")
+        return codes
+    except (requests.RequestException, ValueError) as error:
+        print(f"Could not safely read gift codes: {error}")
         return []
 
+
 def load_history():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r") as f:
-            return [line.strip() for line in f.readlines()]
-    return []
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    with open(HISTORY_FILE, "r", encoding="utf-8") as file:
+        return [line.strip() for line in file if line.strip()]
+
 
 def save_history(all_codes):
-    with open(HISTORY_FILE, "w") as f:
+    with open(HISTORY_FILE, "w", encoding="utf-8") as file:
         for code in all_codes:
-            f.write(f"{code}\n")
+            file.write(f"{code}\n")
+
 
 def send_to_discord(new_code):
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
     if not webhook_url:
-        return
+        print("DISCORD_WEBHOOK_URL missing; not posting")
+        return False
 
     payload = {
         "username": "Kingshot Code Watcher",
-        "avatar_url": "https://kingshot.net",
-        "content": f"🚨 **New Kingshot Gift Code Spotted!** 🚨\n\nGrab it quickly: `{new_code}`\n\n🔗 Redeem it here: [Kingshot Gift Code Center](https://kingshot.net/gift-codes)."
+        "content": (
+            f"🚨 **New Kingshot Gift Code Spotted!** 🚨\n\n"
+            f"Grab it quickly: `{new_code}`\n\n"
+            f"🔗 Redeem it here: [Kingshot Gift Code Center]({URL})."
+        ),
     }
-    requests.post(webhook_url, json=payload)
+    try:
+        response = requests.post(webhook_url, json=payload, timeout=15)
+        response.raise_for_status()
+        return True
+    except requests.RequestException as error:
+        print(f"Discord webhook failed for {new_code}: {error}")
+        return False
+
 
 def main():
     active_codes = fetch_active_codes()
     if not active_codes:
-        print("No codes retrieved during this check run.")
+        print("No safe codes retrieved; leaving history unchanged")
         return
 
     history = load_history()
-    new_discoveries = [code for code in active_codes if code not in history]
+    known = set(history)
+    new_codes = [code for code in active_codes if code not in known]
 
-    if new_discoveries:
-        print(f"Posting new findings: {new_discoveries}")
-        for code in new_discoveries:
-            send_to_discord(code)
+    if not new_codes:
+        print("No new active codes")
+        return
+
+    for code in new_codes:
+        if send_to_discord(code):
             history.append(code)
-        save_history(history)
-        print("Discord update sequence completed.")
-    else:
-        print("No new active items found since previous execution loop check.")
+            known.add(code)
+            # Persist only successful notifications.
+            save_history(history)
+
 
 if __name__ == "__main__":
     main()
