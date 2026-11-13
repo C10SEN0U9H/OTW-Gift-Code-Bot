@@ -3,7 +3,12 @@ name: Hourly Kingshot Code Checker
 on:
   schedule:
     - cron: '*/30 * * * *'  # Runs automatically at the start of every hour
-  workflow_dispatch:     # Allows you to click a button to test it manually whenever you want
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Test only: no Discord messages or history changes"
+        type: boolean
+        default: true
 
 jobs:
   run-bot:
@@ -25,6 +30,7 @@ jobs:
     - name: Execute Code Scraper Script
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
       run: python bot.py
 
     - name: Commit Updated Code History File
