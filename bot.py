@@ -6,11 +6,7 @@ from bs4 import BeautifulSoup
 URL = "https://kingshot.net/gift-codes"
 HISTORY_FILE = "codes_history.txt"
 CODE_PATTERN = re.compile(r"^[A-Za-z0-9]{4,40}$")
-# HTML structure can change; match active entries by their individual redeem links,
-# never by flattening or splitting an entire paragraph/summary into "codes".
-REDEEM_CODE_PATTERN = re.compile(r"(?:^|[?&])(?:code|giftcode|gift_code)=([^&#]+)", re.I)
-
-
+# Only inspect code-styled elements within the active section.\n\n
 def _extract_codes_from_active_section(soup):
     heading = soup.find(
         lambda tag: tag.name in ("h2", "h3")
@@ -26,11 +22,16 @@ def _extract_codes_from_active_section(soup):
             label = element.get_text(" ", strip=True).lower()
             if "expired" in label or "how to redeem" in label:
                 break
-        if getattr(element, "name", None) != "code":
+        if getattr(element, "name", None) not in ("code", "p"):
             continue
-        value = element.get_text(" ", strip=True)
-        if CODE_PATTERN.fullmatch(value) and value not in codes:
-            codes.append(value)
+        classes = element.get("class", [])
+        if element.name == "p" and not any("font-mono" in cls for cls in classes):
+            continue
+        # New layout can put several codes in one monospace paragraph.
+        # Split on whitespace instead of announcing the entire paragraph.
+        for value in element.get_text(" ", strip=True).split():
+            if CODE_PATTERN.fullmatch(value) and value not in codes:
+                codes.append(value)
     return codes
 
 
@@ -45,7 +46,7 @@ def fetch_active_codes():
         soup = BeautifulSoup(response.text, "html.parser")
         codes = _extract_codes_from_active_section(soup)
         if not codes:
-            print("No individual code elements found; skipping to avoid false alerts")
+            print("No individual code-styled elements found; skipping to avoid false alerts")
         else:
             print(f"Individual active gift codes found: {codes}")
         return codes
